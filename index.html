@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#ffffff">
+    <link rel="manifest"
+        href="data:application/json,%7B%22name%22%3A%22Messenger%22%2C%22short_name%22%3A%22Messenger%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23ffffff%22%2C%22theme_color%22%3A%22%23ffffff%22%7D">
+    <title>Messenger</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="app">
+
+        <div class="conn-status connected" id="connStatus"></div>
+        <div class="toast-container" id="toastContainer"></div>
+
+        <div class="loading-screen" id="loadingScreen">
+            <div class="loading-spinner"></div>
+        </div>
+
+        <div class="auth-screen hidden" id="authScreen">
+            <div class="auth-card" id="authCard">
+                <h2 id="authTitle"></h2>
+                <p id="authSubtitle"></p>
+                <div class="auth-error" id="authError"></div>
+                <input class="auth-input" type="text" id="authName" placeholder="" style="display:none" maxlength="16">
+                <input class="auth-input" type="email" id="authEmail" placeholder="Email">
+                <input class="auth-input" type="password" id="authPassword" placeholder="" maxlength="128">
+                <!-- Honeypot: invisible to humans, bots auto-fill it -->
+                <input type="text" id="authWebsite" name="website" autocomplete="off" tabindex="-1"
+                    style="position:absolute;left:-9999px;top:-9999px;width:0;height:0;opacity:0;pointer-events:none"
+                    aria-hidden="true">
+                <button class="auth-btn" id="authBtn" onclick="handleAuth()"></button>
+                <div class="auth-switch" id="authSwitch" onclick="toggleAuthMode()"></div>
+            </div>
+        </div>
+
+        <div class="view active" id="v-chats">
+            <div class="header"><span class="header-title" data-i18n="chats"></span></div>
+            <div class="search-section">
+                <div class="search-bar">
+                    <svg width="12" height="12" fill="none" stroke="#bbb" stroke-width="2" viewBox="0 0 24 24">
+                        <circle cx="11" cy="11" r="8" />
+                        <path d="m21 21-4.35-4.35" />
+                    </svg>
+                    <input type="text" id="searchInput" oninput="handleSearch()"
+                        data-i18n-placeholder="searchByUsername">
+                </div>
+                <div id="searchResults" class="search-results" style="display:none"></div>
+            </div>
+            <div id="chatList"></div>
+        </div>
+
+        <div class="view" id="v-settings">
+            <div class="header"><span class="header-title" data-i18n="settings"></span>
+                <div></div>
+            </div>
+            <div class="s-item" onclick="go('profile')" style="padding:9px 14px;margin-bottom:2px">
+                <div class="ava-sm" id="settingsAva"
+                    style="width:42px;height:42px;background:#1a1a1a;color:#fff;font-size:14px;overflow:hidden;background-size:cover;background-position:center">
+                    U</div>
+                <div style="flex:1">
+                    <div style="font-size:11px;font-weight:600" id="settingsName">Username</div>
+                    <div style="font-size:9px;color:#aaa;margin-top:1px" data-i18n="online"></div>
+                </div>
+                <svg width="11" height="11" fill="none" stroke="#ddd" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+            </div>
+            <div class="divider"></div>
+            <div class="s-item" onclick="openNotifications()">
+                <div class="s-icon"><svg width="11" height="11" fill="none" stroke="#777" stroke-width="1.8"
+                        viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                    </svg></div>
+                <div style="flex:1;display:flex;align-items:center;justify-content:space-between">
+                    <div style="font-size:11px;font-weight:500" data-i18n="notifications"></div>
+                    <div id="notifBadge" class="notif-badge" style="display:none"></div>
+                </div>
+                <svg width="11" height="11" fill="none" stroke="#ddd" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+            </div>
+            <div class="s-item">
+                <div class="s-icon"><svg width="11" height="11" fill="none" stroke="#777" stroke-width="1.8"
+                        viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg></div>
+                <div style="flex:1">
+                    <div style="font-size:11px;font-weight:500" data-i18n="privacy"></div>
+                </div>
+                <svg width="11" height="11" fill="none" stroke="#ddd" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+            </div>
+            <div class="s-item" onclick="openLangModal()">
+                <div class="s-icon"><svg width="11" height="11" fill="none" stroke="#777" stroke-width="1.8"
+                        viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                    </svg></div>
+                <div style="flex:1">
+                    <div style="font-size:11px;font-weight:500" data-i18n="language"></div>
+                    <div style="font-size:8px;color:#aaa;margin-top:1px" id="langSubtitle"></div>
+                </div>
+                <svg width="11" height="11" fill="none" stroke="#ddd" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+            </div>
+            <div class="divider"></div>
+            <div class="s-item" onclick="logout()" style="cursor:pointer">
+                <div class="s-icon" style="background:#fee"><svg width="11" height="11" fill="none" stroke="#e55"
+                        stroke-width="1.8" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg></div>
+                <div style="flex:1">
+                    <div style="font-size:11px;font-weight:500;color:#e55" data-i18n="logout"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="view" id="v-profile">
+            <div class="banner" id="profileBanner">
+                <button onclick="openEditModal()"
+                    style="position:absolute;top:7px;right:7px;background:rgba(0,0,0,.3);border:none;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(8px)">
+                    <svg width="10" height="10" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                </button>
+                <div class="profile-ava" id="profileAva">U</div>
+            </div>
+            <div style="padding:44px 14px 0;text-align:center">
+                <div class="profile-name-row">
+                    <span style="font-size:15px;font-weight:700" id="profileName">Username</span>
+                    <div id="profileEmoji" class="emoji-preview" style="display:none;cursor:pointer"
+                        onclick="openEmojiPreview()"></div>
+                </div>
+                <div
+                    style="font-size:9px;color:#aaa;margin-top:3px;display:flex;align-items:center;justify-content:center;gap:3px">
+                    <div style="width:5px;height:5px;border-radius:50%;background:#4ade80"></div>
+                    <span data-i18n="online"></span>
+                </div>
+            </div>
+            <div style="height:12px"></div>
+            <div class="info-section">
+                <div class="info-row" id="bioRow" style="display:none">
+                    <div>
+                        <div class="info-value" id="infoBio"></div>
+                        <div class="info-label" data-i18n="aboutMe"></div>
+                    </div>
+                </div>
+                <div class="info-row" id="usernameRow" style="display:none">
+                    <div>
+                        <div class="info-value" id="infoUsername">@username</div>
+                        <div class="info-label" data-i18n="username"></div>
+                    </div>
+                </div>
+                <div class="info-row">
+                    <div>
+                        <div class="info-value" id="infoId" data-i18n="loading"></div>
+                        <div class="info-label">ID</div>
+                    </div>
+                </div>
+                <div class="info-row" id="verifiedRow" style="display:none;border-bottom:none">
+                    <div>
+                        <div class="info-value" style="display:inline-flex;align-items:center;gap:1px"><span
+                                data-i18n="accountVerified"></span>
+                            <div id="verifiedEmoji" style="flex-shrink:0;position:relative;top:-2px"></div>
+                        </div>
+                        <div class="info-label" data-i18n="accountStatus"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-view" id="chatView">
+            <div style="display:flex;flex-direction:column;height:100%">
+                <div class="chat-header">
+                    <button onclick="closeChat()" style="background:none;border:none;cursor:pointer;padding:2px">
+                        <svg width="14" height="14" fill="none" stroke="#000" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                        </svg>
+                    </button>
+                    <div class="ava-sm" id="cAva" style="width:34px;height:34px;font-size:12px;cursor:pointer"
+                        onclick="openUserProfile()"></div>
+                    <div style="flex:1">
+                        <div style="display:flex;align-items:center">
+                            <span style="font-size:11px;font-weight:600" id="cName"></span>
+                            <div id="chatHeaderEmoji"
+                                style="width:18px;height:18px;display:none;margin-left:2px;flex-shrink:0"></div>
+                        </div>
+                        <div style="font-size:8px;color:#aaa" id="cStatus"></div>
+                    </div>
+                </div>
+                <div class="messages-area" id="msgArea"></div>
+                <div class="input-bar">
+                    <div class="reply-bar" id="replyBar" style="display:none">
+                        <svg width="14" height="14" fill="none" stroke="#000" stroke-width="2" viewBox="0 0 24 24"
+                            style="margin-right:8px">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                        </svg>
+                        <div class="reply-info">
+                            <div class="reply-name" id="replyName">User</div>
+                            <div class="reply-text" id="replyText">Text</div>
+                        </div>
+                        <div class="reply-close" onclick="cancelReply()">
+                            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="input-wrap">
+                        <input type="text" id="msgIn" onkeydown="if(event.key==='Enter')send()"
+                            oninput="updBtn();scrollToBottom()" data-i18n-placeholder="messagePlaceholder">
+                        <button class="send-btn off" id="sendBtn" onclick="send()">
+                            <svg width="11" height="11" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M12 5l7 7-7 7" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="user-profile-view" id="userProfileView">
+            <div class="banner" id="upBanner">
+                <button onclick="closeUserProfile()"
+                    style="position:absolute;top:7px;left:7px;background:rgba(0,0,0,.3);border:none;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(8px)">
+                    <svg width="11" height="11" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                    </svg>
+                </button>
+                <div class="profile-ava" id="upAva">U</div>
+            </div>
+            <div style="padding:44px 14px 0;text-align:center">
+                <div class="profile-name-row">
+                    <span style="font-size:15px;font-weight:700" id="upName">Username</span>
+                    <div id="upEmoji" class="emoji-preview" style="display:none;cursor:pointer"
+                        onclick="openEmojiPreviewFor()"></div>
+                </div>
+                <div style="font-size:9px;color:#aaa;margin-top:3px;display:flex;align-items:center;justify-content:center;gap:3px"
+                    id="upStatusLine">
+                    <div style="width:5px;height:5px;border-radius:50%;background:#4ade80" id="upStatusDot"></div>
+                    <span id="upStatusText"></span>
+                </div>
+            </div>
+            <div style="height:12px"></div>
+            <div class="info-section" id="upInfoSection">
+                <div class="info-row" id="upBioRow" style="display:none">
+                    <div>
+                        <div class="info-value" id="upBio"></div>
+                        <div class="info-label" data-i18n="aboutMe"></div>
+                    </div>
+                </div>
+                <div class="info-row" id="upUsernameRow" style="display:none">
+                    <div>
+                        <div class="info-value" id="upUsername">@username</div>
+                        <div class="info-label" data-i18n="username"></div>
+                    </div>
+                </div>
+                <div class="info-row">
+                    <div>
+                        <div class="info-value" id="upId" data-i18n="loading"></div>
+                        <div class="info-label">ID</div>
+                    </div>
+                </div>
+                <div class="info-row" id="upVerifiedRow" style="display:none;border-bottom:none">
+                    <div>
+                        <div class="info-value" style="display:inline-flex;align-items:center;gap:1px"><span
+                                data-i18n="accountVerified"></span>
+                            <div id="upVerifiedEmoji" style="flex-shrink:0;position:relative;top:-2px"></div>
+                        </div>
+                        <div class="info-label" data-i18n="accountStatus"></div>
+                    </div>
+                </div>
+                <div style="padding:0 14px 20px;text-align:center">
+                    <button class="profile-action-btn" id="upMsgBtn" onclick="openChatFromProfile()">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                        </svg>
+                        <span data-i18n="writeMessage"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="editModal">
+            <div class="modal-tap-zone" onclick="closeEditModal()"></div>
+            <div class="modal-sheet">
+                <div class="modal-header">
+                    <button class="btn-sm btn-ghost" onclick="closeEditModal()" data-i18n="cancel"></button>
+                    <span data-i18n="edit"></span>
+                    <button class="btn-sm btn-black" onclick="saveProfile()" data-i18n="save"></button>
+                </div>
+                <div class="save-error" id="saveError"></div>
+                <div style="padding:10px 14px 4px;display:flex;gap:12px;align-items:flex-start">
+                    <div style="text-align:center;flex-shrink:0">
+                        <div style="font-size:9px;color:#aaa;margin-bottom:4px" data-i18n="avatar"></div>
+                        <div style="position:relative;display:inline-block;cursor:pointer"
+                            onclick="document.getElementById('avaFileInput').click()">
+                            <div id="editAvaPreview"
+                                style="width:58px;height:58px;border-radius:50%;background:#e0e0e0;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#999;overflow:hidden;background-size:cover;background-position:center">
+                                U</div>
+                            <div
+                                style="position:absolute;inset:0;border-radius:50%;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;pointer-events:none">
+                                <svg width="18" height="18" fill="none" stroke="#fff" stroke-width="1.8"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                        d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" />
+                                    <circle cx="12" cy="13" r="4" />
+                                </svg>
+                            </div>
+                        </div>
+                        <input type="file" id="avaFileInput" accept="image/jpeg,image/png,image/webp"
+                            style="display:none" onchange="handleAvaUpload(event)">
+                    </div>
+                    <div style="flex:1;min-width:0">
+                        <div style="font-size:9px;color:#aaa;margin-bottom:4px" data-i18n="bannerLabel"></div>
+                        <div class="upload-zone" onclick="document.getElementById('bannerFileInput').click()"
+                            id="bannerUploadZone" style="padding:8px;border-radius:8px">
+                            <svg width="14" height="14" fill="none" stroke="#bbb" stroke-width="1.8"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            <p data-i18n="clickToUpload"></p>
+                        </div>
+                        <input type="file" id="bannerFileInput" accept="image/jpeg,image/png,image/webp"
+                            style="display:none" onchange="handleBannerUpload(event)">
+                    </div>
+                </div>
+                <div class="edit-field">
+                    <label data-i18n="nameLabel"></label>
+                    <input type="text" id="editName" maxlength="16" data-i18n-placeholder="yourName">
+                    <div class="field-error" id="editNameError"></div>
+                </div>
+                <div class="edit-field">
+                    <label data-i18n="username"></label>
+                    <input type="text" id="editUsername" placeholder="username" maxlength="20">
+                    <div class="field-error" id="editUsernameError"></div>
+                </div>
+                <div class="edit-field">
+                    <label data-i18n="aboutMe"></label>
+                    <div class="bio-wrap">
+                        <textarea id="editBio" rows="2" maxlength="40" oninput="updBioCounter()"
+                            data-i18n-placeholder="tellAboutYourself"></textarea>
+                        <div class="bio-counter" id="bioCounter">0/40</div>
+                    </div>
+                    <div class="field-error" id="editBioError"></div>
+                </div>
+                <div style="padding:6px 14px 10px">
+                    <div style="font-size:9px;color:#aaa;margin-bottom:5px" data-i18n="animatedEmoji"></div>
+                    <div class="upload-zone" id="emojiUploadZone"
+                        style="padding:6px;display:flex;align-items:center;gap:6px;justify-content:center;width:100%"
+                        onclick="document.getElementById('emojiFileInput').click()">
+                        <svg width="12" height="12" fill="none" stroke="#bbb" stroke-width="1.8" viewBox="0 0 24 24"
+                            style="flex-shrink:0">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span style="font-size:10px;color:#aaa" data-i18n="uploadTgsJson"></span>
+                    </div>
+                    <div id="emojiResultRow"
+                        style="display:none;margin-top:6px;align-items:center;gap:8px;justify-content:center">
+                        <div id="editEmojiPreview" style="width:28px;height:28px;flex-shrink:0"></div>
+                        <span style="font-size:10px;color:#777" id="emojiStatusText" data-i18n="emojiLoaded"></span>
+                        <button class="btn-sm"
+                            style="color:#e55;font-size:9px;padding:3px 8px;background:#fee;border-radius:6px;margin-left:auto"
+                            onclick="event.stopPropagation();removeEmoji()" data-i18n="delete"></button>
+                    </div>
+                    <input type="file" id="emojiFileInput" accept=".tgs,.json,.lottie" style="display:none"
+                        onchange="handleEmojiUpload(event)">
+                </div>
+            </div>
+        </div>
+
+        <div class="emoji-modal-overlay" id="emojiPreviewModal" onclick="closeEmojiPreview(event)">
+            <div class="emoji-modal-card" onclick="event.stopPropagation()">
+                <div class="emoji-modal-lottie" id="emojiPreviewLottie"></div>
+                <div class="emoji-modal-info">
+                    <div class="label" data-i18n="animatedEmoji"></div>
+                    <div class="value" id="emojiPreviewOwner">Username</div>
+                </div>
+                <button class="emoji-modal-close" onclick="closeEmojiPreview()" data-i18n="close"></button>
+            </div>
+        </div>
+
+        <div class="verify-preview-modal" id="verifyPreviewModal" onclick="closeVerifyPreview(event)">
+            <div class="verify-card" onclick="event.stopPropagation()">
+                <div id="verifyPreviewEmoji" class="verify-emoji-lg"></div>
+                <div id="verifyPreviewText" class="verify-title"></div>
+                <div class="verify-actions">
+                    <button class="verify-btn verify-btn-gray" id="verifyHowToBtn" onclick="openVerifyRequest()"
+                        data-i18n="howToGet"></button>
+                    <button class="verify-btn verify-btn-black" onclick="closeVerifyPreview()"
+                        data-i18n="close"></button>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="verifyRequestModal">
+            <div class="modal-tap-zone"
+                onclick="document.getElementById('verifyRequestModal').classList.remove('open')"></div>
+            <div class="modal-sheet">
+                <div class="modal-header">
+                    <button class="btn-sm btn-ghost"
+                        onclick="document.getElementById('verifyRequestModal').classList.remove('open')"
+                        data-i18n="cancel"></button>
+                    <span data-i18n="request"></span>
+                    <button class="btn-sm btn-black" onclick="submitVerification()" data-i18n="send"></button>
+                </div>
+                <div style="padding:14px">
+                    <p style="font-size:11px;color:#666;margin-bottom:10px;line-height:1.4"
+                        data-i18n="verifyDescription"></p>
+                    <textarea id="verifyReason" rows="6" class="auth-input" maxlength="500" style="resize:none"
+                        data-i18n-placeholder="reasonPlaceholder"></textarea>
+                    <div style="text-align:right;font-size:9px;color:#ccc;margin-top:4px" id="verifyCounter">0/500</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="notificationsModal">
+            <div class="modal-tap-zone"
+                onclick="document.getElementById('notificationsModal').classList.remove('open')"></div>
+            <div class="modal-sheet" style="height:70%">
+                <div class="modal-header">
+                    <span data-i18n="notifications"></span>
+                    <button class="btn-sm btn-ghost"
+                        onclick="document.getElementById('notificationsModal').classList.remove('open')"
+                        data-i18n="close"></button>
+                </div>
+                <div id="notifList" style="padding:0 14px 20px"></div>
+            </div>
+        </div>
+
+        <div class="modal-overlay" id="rejectReasonModal">
+            <div class="modal-tap-zone" onclick="document.getElementById('rejectReasonModal').classList.remove('open')">
+            </div>
+            <div class="modal-sheet">
+                <div class="modal-header">
+                    <button class="btn-sm btn-ghost"
+                        onclick="document.getElementById('rejectReasonModal').classList.remove('open')"
+                        data-i18n="cancel"></button>
+                    <span data-i18n="rejectReason"></span>
+                    <button class="btn-sm btn-black" onclick="submitReject()" data-i18n="send"></button>
+                </div>
+                <div style="padding:14px">
+                    <textarea id="rejectReason" rows="4" class="auth-input" maxlength="200"
+                        data-i18n-placeholder="specifyRejectReason"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- Language Modal -->
+        <div class="modal-overlay" id="langModal">
+            <div class="modal-tap-zone" onclick="closeLangModal()"></div>
+            <div class="modal-sheet">
+                <div class="modal-header">
+                    <span data-i18n="language"></span>
+                    <button class="btn-sm btn-ghost" onclick="closeLangModal()" data-i18n="close"></button>
+                </div>
+                <div id="langList" style="padding:0"></div>
+            </div>
+        </div>
+
+        <div class="quote-tooltip" id="quoteTooltip" onmousedown="handleQuoteClick(event)">
+            <svg width="12" height="12" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+            </svg>
+            <span data-i18n="quote"></span>
+        </div>
+
+        <div class="bottom-bar" id="bar">
+            <button class="tab-btn active" onclick="go('chats')" data-t="chats">
+                <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                <span data-i18n="chats"></span>
+            </button>
+            <button class="tab-btn" onclick="go('settings')" data-t="settings">
+                <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <circle cx="12" cy="12" r="3" />
+                </svg>
+                <span data-i18n="settings"></span>
+            </button>
+            <button class="tab-btn" onclick="go('profile')" data-t="profile">
+                <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <span data-i18n="profileTab"></span>
+            </button>
+        </div>
+    </div>
+
+
+    <!-- JS Modules (order matters!) -->
+    <script src="js/config.js"></script>
+    <script src="js/i18n.js"></script>
+    <script src="js/antibot.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/emoji.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/profile.js"></script>
+    <script src="js/chat.js"></script>
+    <script src="js/realtime.js"></script>
+    <script src="js/app.js"></script>
+</body>
+
+</html>

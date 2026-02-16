@@ -14,17 +14,15 @@ async function handleAuth() {
     var errEl = document.getElementById('authError');
     errEl.textContent = '';
 
-    // Honeypot check: если заполнено скрытое поле — это бот
+    // Honeypot check
     var hp = document.getElementById('authWebsite');
     if (hp && hp.value) {
-        // Тихо "успешно" — бот думает что прошёл
         errEl.textContent = t('fillAllFields');
         return;
     }
 
     if (!email || !password) { errEl.textContent = t('fillAllFields'); return }
-    if (password.length < 8) { errEl.textContent = t('passwordMin8'); return }
-    if (!PASSWORD_RE.test(password)) { errEl.textContent = t('invalidPasswordChars'); return }
+    if (password.length < 6) { errEl.textContent = t('passwordMin8'); return } // Supabase min is 6
 
     var btn = document.getElementById('authBtn');
     btn.disabled = true;
@@ -43,49 +41,71 @@ async function handleAuth() {
 
     try {
         if (isRegister) {
+            // REGISTRATION
             var name = document.getElementById('authName').value.trim();
             if (!name) { errEl.textContent = t('enterName'); btn.disabled = false; hideLoading(); return }
-            if (name.length > 16) { errEl.textContent = t('nameMax16'); btn.disabled = false; hideLoading(); return }
-            if (!NAME_RE.test(name)) { errEl.textContent = t('nameOnlyLetters'); btn.disabled = false; hideLoading(); return }
 
             var res = await sb.auth.signUp({ email: email, password: password, options: { data: { name: name } } });
-            if (res.error) { errEl.textContent = res.error.message; btn.disabled = false; hideLoading(); return }
+
+            if (res.error) {
+                // Обработка частых ошибок регистрации
+                if (res.error.message.includes('rate limit')) errEl.textContent = 'Too many requests. Try again later.';
+                else errEl.textContent = res.error.message;
+                btn.disabled = false; hideLoading();
+                return;
+            }
 
             if (res.data && res.data.user) {
+                // Если сессии нет, значит включено подтверждение почты
+                if (!res.data.session) {
+                    errEl.textContent = 'Registration successful! Please check your email to confirm account.';
+                    errEl.style.color = '#4ade80';
+                    btn.disabled = false;
+                    hideLoading();
+                    return;
+                }
+
+                // Всё ок, входим
                 authUid = res.data.user.id;
-                cachedToken = res.data.session ? res.data.session.access_token : null;
+                cachedToken = res.data.session.access_token;
                 clearCache();
-                var userId = await createProfile(authUid, name);
+
+                // Создаем профиль
+                await createProfile(authUid, name);
+
                 profile.name = name;
-                profile.username = null;
-                profile.bio = '';
-                profile.user_id = userId;
-                profile.avatar_url = null;
-                profile.banner_url = null;
-                profile.emoji_url = null;
-                profile.emojiData = null;
-                profile.emoji2_url = null;
-                profile.emoji2Data = null;
-                hasUsername = false;
                 updateCache(profile);
                 applyProfile();
+
                 await Promise.all([loadChats(), minLoad]);
                 setupRealtime();
                 hideAuth();
                 hideLoading();
             }
         } else {
+            // LOGIN
             var res = await sb.auth.signInWithPassword({ email: email, password: password });
-            if (res.error) { errEl.textContent = res.error.message; btn.disabled = false; hideLoading(); return }
+
+            if (res.error) {
+                if (res.error.message.includes('Invalid login credentials')) errEl.textContent = 'Invalid email or password.';
+                else if (res.error.message.includes('Email not confirmed')) errEl.textContent = 'Email not confirmed. Check your inbox.';
+                else errEl.textContent = res.error.message;
+                btn.disabled = false;
+                hideLoading();
+                return;
+            }
 
             if (res.data && res.data.user) {
                 authUid = res.data.user.id;
                 cachedToken = res.data.session ? res.data.session.access_token : null;
+
                 loadCache();
                 applyCacheToProfile();
                 loadCachedChats();
+
                 await ensureProfile(authUid);
                 await Promise.all([loadProfile(), loadChats(), minLoad]);
+
                 setupRealtime();
                 hideAuth();
                 hideLoading();
@@ -99,6 +119,7 @@ async function handleAuth() {
 }
 
 async function createProfile(uid, name) {
+    if (!uid) return;
     var userId = generateUserId();
     var exists = true;
     while (exists) {
@@ -106,16 +127,21 @@ async function createProfile(uid, name) {
         if (!check.data) exists = false;
         else userId = generateUserId();
     }
+    // Попытка создания
     await sb.from('profiles').upsert({
-        id: uid, user_id: userId, name: name, username: null,
+        id: uid, user_id: userId, name: name || 'User', username: null,
         bio: '', online: true, last_seen: new Date().toISOString(), language: currentLang
     }, { onConflict: 'id' });
     return userId;
 }
 
 async function ensureProfile(uid) {
-    var res = await sb.from('profiles').select('id').eq('id', uid).maybeSingle();
-    if (!res.data) await createProfile(uid, 'User');
+    if (!uid) return;
+    var res = await sb.from('profiles').select('id,name').eq('id', uid).maybeSingle();
+    // Если профиля нет (старый юзер?), создаем
+    if (!res.data) {
+        await createProfile(uid, 'User');
+    }
 }
 
 function logout() {

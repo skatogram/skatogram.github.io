@@ -112,7 +112,8 @@ var translations = {
         quote: 'Цитата',
         langChanged: 'Язык изменён',
         botCheck: 'Проверка...',
-        botFailed: 'Проверка не пройдена, попробуйте снова'
+        botFailed: 'Проверка не пройдена, попробуйте снова',
+        darkMode: 'Темная тема'
     },
     en: {
         loginTitle: 'Login',
@@ -226,7 +227,8 @@ var translations = {
         quote: 'Quote',
         langChanged: 'Language changed',
         botCheck: 'Checking...',
-        botFailed: 'Verification failed, try again'
+        botFailed: 'Verification failed, try again',
+        darkMode: 'Dark Mode'
     }
 };
 

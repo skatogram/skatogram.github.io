@@ -1,10 +1,30 @@
 // ==================== REALTIME & USER PROFILES ====================
 
+// Notification sound
+var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playNotifSound() {
+    if (document.hidden || !curChatId) { // Only if not focused on this specific chat? or always?
+        // Simple beep
+        var osc = audioCtx.createOscillator();
+        var gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(500, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1000, audioCtx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+    }
+}
+
 function handleRealtimeMessage(cid, pl) {
     var m = pl.new; if (!m) return;
     var uid = myUid(), io = String(m.sender_id) === uid;
     if (!io) {
         if (curChatId === cid) {
+            // ... (existing code for open chat) ...
             var d = new Date(m.created_at), ti = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
             var a = document.getElementById('msgArea');
             var es = a.querySelector('.empty-state');
@@ -29,8 +49,14 @@ function handleRealtimeMessage(cid, pl) {
             div.innerHTML = '<div class="swipe-reply-icon"><svg width="14" height="14" fill="none" stroke="#999" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg></div><div class="msg msg-in">' + replyBlock + '<span class="markdown">' + formatText(m.text) + '</span></div><div class="msg-time" style="text-align:left;padding:0 4px">' + ti + '</div>';
             a.appendChild(div);
             a.scrollTop = a.scrollHeight;
+            playNotifSound(); // Play sound even if open
             sb.from('messages').update({ read: true, delivered: true }).eq('id', m.id).then(function () { });
         } else {
+            playNotifSound();
+            // Show toast
+            var c = chats.find(function (x) { return x.id === cid });
+            var nm = c ? c.name : 'New Message';
+            showToast(nm + ': ' + (m.text.length > 20 ? m.text.substring(0, 20) + '...' : m.text));
             sb.from('messages').update({ delivered: true }).eq('id', m.id).then(function () { });
         }
     }
@@ -91,14 +117,26 @@ function handleProfileChange(pid, pl) {
 function subscribeToChatChannels() {
     var ci = new Set();
     chats.forEach(function (c) { ci.add(String(c.id)) });
-    Object.keys(chatChannels).forEach(function (k) { if (!ci.has(k)) { sb.removeChannel(chatChannels[k]); delete chatChannels[k] } });
+
+    // Remove stale
+    Object.keys(chatChannels).forEach(function (k) {
+        if (!ci.has(k)) {
+            if (chatChannels[k]) sb.removeChannel(chatChannels[k]);
+            delete chatChannels[k];
+        }
+    });
+
+    // Add new
     chats.forEach(function (c) {
         var k = String(c.id);
         if (chatChannels[k]) return;
+
         chatChannels[k] = sb.channel('chat-' + k)
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: 'chat_id=eq.' + c.id }, function (pl) { handleRealtimeMessage(c.id, pl) })
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: 'chat_id=eq.' + c.id }, function (pl) { handleMessageUpdate(c.id, pl) })
-            .subscribe();
+            .subscribe(function (status) {
+                if (status === 'SUBSCRIBED') { /* console.log('Subscribed to chat', c.id); */ }
+            });
     });
 }
 

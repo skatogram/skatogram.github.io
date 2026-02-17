@@ -18,6 +18,7 @@ async function init() {
     try {
         loadLang();
         applyI18n();
+        initTheme();
         showLoading();
         loadCache();
         setTimeout(hideLoading, 5000);

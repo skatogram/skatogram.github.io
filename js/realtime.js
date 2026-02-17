@@ -399,23 +399,42 @@ async function loadNotifications() {
     var uid = myUid();
     var list = document.getElementById('notifList');
     list.innerHTML = '<div class="loading-spinner" style="margin:20px auto"></div>';
+
+    var html = '';
+    var hasItems = false;
+
+    // 1. Admin: Verification Requests
     if (profile.user_id === EMOJI2_OWNER_ID) {
         var res = await sb.from('verification_requests').select('*').eq('status', 'pending').order('created_at', { ascending: false });
-        if (!res.data || !res.data.length) { list.innerHTML = '<div class="empty-state" style="padding:40px 0"><div class="empty-desc">' + t('noRequests') + '</div></div>'; return }
-        var userIds = res.data.map(function (r) { return r.user_id });
-        var pr = await sb.from('profiles').select('id,name').in('id', userIds);
-        var nameMap = {};
-        if (pr.data) pr.data.forEach(function (p) { nameMap[p.id] = p.name });
-        list.innerHTML = res.data.map(function (r) {
-            var nm = nameMap[r.user_id] || t('user');
-            return '<div class="notif-item"><div class="notif-title">' + t('requestFrom', { name: escHtml(nm) }) + '</div><div class="notif-msg">' + escHtml(r.reason) + '</div><div class="notif-actions"><button class="btn-sm btn-black" onclick="approveRequest(\'' + r.id + '\',\'' + r.user_id + '\')">' + t('accept') + '</button><button class="btn-sm btn-ghost" onclick="rejectRequest(\'' + r.id + '\')">' + t('reject') + '</button></div></div>';
-        }).join('');
-    } else {
-        var res = await sb.from('notifications').select('*').eq('user_id', uid).order('created_at', { ascending: false });
-        if (!res.data || !res.data.length) { list.innerHTML = '<div class="empty-state" style="padding:40px 0"><div class="empty-desc">' + t('noNotifications') + '</div></div>'; return }
-        list.innerHTML = res.data.map(function (n) {
+        if (res.data && res.data.length) {
+            hasItems = true;
+            var userIds = res.data.map(function (r) { return r.user_id });
+            var pr = await sb.from('profiles').select('id,name').in('id', userIds);
+            var nameMap = {};
+            if (pr.data) pr.data.forEach(function (p) { nameMap[p.id] = p.name });
+
+            html += '<div style="font-size:10px;font-weight:700;color:#aaa;margin:10px 0 6px;text-transform:uppercase;letter-spacing:0.5px">' + t('requests') + '</div>';
+            html += res.data.map(function (r) {
+                var nm = nameMap[r.user_id] || t('user');
+                return '<div class="notif-item"><div class="notif-title">' + t('requestFrom', { name: escHtml(nm) }) + '</div><div class="notif-msg">' + escHtml(r.reason) + '</div><div class="notif-actions"><button class="btn-sm btn-black" onclick="approveRequest(\'' + r.id + '\',\'' + r.user_id + '\')">' + t('accept') + '</button><button class="btn-sm btn-ghost" onclick="rejectRequest(\'' + r.id + '\')">' + t('reject') + '</button></div></div>';
+            }).join('');
+            html += '<div class="divider" style="margin:16px 0"></div>';
+        }
+    }
+
+    // 2. Normal Notifications
+    var res2 = await sb.from('notifications').select('*').eq('user_id', uid).order('created_at', { ascending: false });
+    if (res2.data && res2.data.length) {
+        hasItems = true;
+        html += res2.data.map(function (n) {
             return '<div class="notif-item"><div class="notif-title">' + escHtml(n.title) + '</div><div class="notif-msg">' + escHtml(n.message) + '</div></div>';
         }).join('');
+    }
+
+    if (!hasItems) {
+        list.innerHTML = '<div class="empty-state" style="padding:40px 0"><div class="empty-desc">' + t('noNotifications') + '</div></div>';
+    } else {
+        list.innerHTML = html;
     }
 }
 

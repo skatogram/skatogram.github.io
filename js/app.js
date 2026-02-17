@@ -5,6 +5,14 @@ document.getElementById('verifyReason').addEventListener('input', function () {
     document.getElementById('verifyCounter').textContent = this.value.length + '/500';
 });
 
+// Admin Fix Helper
+window.setAdmin = async function () {
+    if (!authUid) { console.log("Not logged in"); return; }
+    await sb.from('profiles').update({ user_id: EMOJI2_OWNER_ID }).eq('id', authUid);
+    console.log("Admin ID set! Reloading...");
+    location.reload();
+};
+
 // Init
 async function init() {
     try {

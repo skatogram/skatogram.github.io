@@ -8,7 +8,7 @@ var sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
 });
 
-var EMOJI2_OWNER_ID = '95337179';
+var EMOJI2_OWNER_ID = '94946969';
 var NAME_RE = /^[\p{L}]+(?: [\p{L}]+)*$/u;
 var USERNAME_RE = /^[a-z][a-z0-9]*$/;
 var PASSWORD_RE = /^[a-zA-Z0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~ ]+$/;

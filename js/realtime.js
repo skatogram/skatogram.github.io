@@ -22,9 +22,15 @@ function playNotifSound() {
 function handleRealtimeMessage(cid, pl) {
     var m = pl.new; if (!m) return;
     var uid = myUid(), io = String(m.sender_id) === uid;
+
+    var ci = chats.find(function (c) { return c.id === cid });
+    if (!ci) {
+        loadChats();
+        return;
+    }
+
     if (!io) {
         if (curChatId === cid) {
-            // ... (existing code for open chat) ...
             var d = new Date(m.created_at), ti = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
             var a = document.getElementById('msgArea');
             var es = a.querySelector('.empty-state');
@@ -49,31 +55,26 @@ function handleRealtimeMessage(cid, pl) {
             div.innerHTML = '<div class="swipe-reply-icon"><svg width="14" height="14" fill="none" stroke="#999" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg></div><div class="msg msg-in">' + replyBlock + '<span class="markdown">' + formatText(m.text) + '</span></div><div class="msg-time" style="text-align:left;padding:0 4px">' + ti + '</div>';
             a.appendChild(div);
             a.scrollTop = a.scrollHeight;
-            playNotifSound(); // Play sound even if open
+            playNotifSound();
             sb.from('messages').update({ read: true, delivered: true }).eq('id', m.id).then(function () { });
         } else {
             playNotifSound();
-            // Show toast
-            var c = chats.find(function (x) { return x.id === cid });
-            var nm = c ? c.name : 'New Message';
-            showToast(nm + ': ' + (m.text.length > 20 ? m.text.substring(0, 20) + '...' : m.text));
+            showToast(ci.name + ': ' + (m.text.length > 20 ? m.text.substring(0, 20) + '...' : m.text));
             sb.from('messages').update({ delivered: true }).eq('id', m.id).then(function () { });
         }
     }
-    var ci = chats.find(function (c) { return c.id === cid });
-    if (ci) {
-        var d2 = new Date(m.created_at);
-        ci.lastMsg = m.text;
-        ci.time = String(d2.getHours()).padStart(2, '0') + ':' + String(d2.getMinutes()).padStart(2, '0');
-        ci.lastMsgOut = io;
-        ci.lastMsgTimestamp = m.created_at;
-        if (io) ci.lastMsgStatus = 'sent';
-        if (!io && curChatId !== cid) ci.unread = (ci.unread || 0) + 1;
-        if (!io && curChatId === cid) ci.unread = 0;
-        sortChats();
-        renderChatList();
-        cacheChats(chats);
-    }
+
+    var d2 = new Date(m.created_at);
+    ci.lastMsg = m.text;
+    ci.time = String(d2.getHours()).padStart(2, '0') + ':' + String(d2.getMinutes()).padStart(2, '0');
+    ci.lastMsgOut = io;
+    ci.lastMsgTimestamp = m.created_at;
+    if (io) ci.lastMsgStatus = 'sent';
+    if (!io && curChatId !== cid) ci.unread = (ci.unread || 0) + 1;
+    if (!io && curChatId === cid) ci.unread = 0;
+    sortChats();
+    renderChatList();
+    cacheChats(chats);
 }
 
 function handleMessageUpdate(cid, pl) {
@@ -158,7 +159,17 @@ function setupRealtime() {
     reconnectAttempts = 0;
     var uid = myUid();
     globalChannel = sb.channel('global-' + uid)
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_members', filter: 'user_id=eq.' + uid }, function () { loadChats() })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_members', filter: 'user_id=eq.' + uid }, function (pl) {
+            var newChatId = pl.new && pl.new.chat_id;
+            if (newChatId && !chatChannels[String(newChatId)]) {
+                var k = String(newChatId);
+                chatChannels[k] = sb.channel('chat-' + k)
+                    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: 'chat_id=eq.' + newChatId }, function (pl2) { handleRealtimeMessage(newChatId, pl2) })
+                    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages', filter: 'chat_id=eq.' + newChatId }, function (pl2) { handleMessageUpdate(newChatId, pl2) })
+                    .subscribe();
+            }
+            loadChats();
+        })
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: 'user_id=eq.' + uid }, function (pl) {
             document.getElementById('notifBadge').style.display = 'flex';
             document.getElementById('notifBadge').textContent = '!';
